@@ -68,18 +68,20 @@ def tela_autenticacao():
     _, col2, _ = st.columns([1, 1.4, 1])
     with col2:
         st.markdown("## 🌱 Sustenta — Empresa Júnior UFU")
-        st.caption(
-            "Plataforma interna de gestão ambiental, projetos e metas financeiras."
-        )
-        aba_login, aba_cadastro = st.tabs(["🔑 Entrar", "📝 Criar Conta"])
+        st.caption("Faça login com a credencial oficial da diretoria.")
 
-        with aba_login:
-            with st.form("form_login"):
-                email = st.text_input("E-mail")
-                senha = st.text_input("Senha", type="password")
-                if st.form_submit_button(
-                    "Acessar Dashboard", use_container_width=True
-                ):
+        with st.form("form_login"):
+            email = st.text_input("E-mail", value="isabella.felipe@ufu.br")
+            senha = st.text_input("Senha", type="password")
+            
+            if st.form_submit_button("Acessar Dashboard", use_container_width=True):
+                # Usuário padrão fixo de acesso imediato
+                if email.strip().lower() == "isabella.felipe@ufu.br" and senha == "Sustenta2026!":
+                    st.session_state.logado = True
+                    st.session_state.usuario_nome = "Isabella Felipe"
+                    st.rerun()
+                else:
+                    # Tenta validar no Supabase caso seja outro usuário cadastrado
                     try:
                         res = (
                             supabase.table("usuarios")
@@ -94,33 +96,8 @@ def tela_autenticacao():
                             st.rerun()
                         else:
                             st.error("E-mail ou senha incorretos.")
-                    except Exception as e:
-                        st.error(f"Erro ao conectar com o banco: {e}")
-
-        with aba_cadastro:
-            with st.form("form_cadastro"):
-                novo_nome = st.text_input("Seu Nome Completo")
-                novo_email = st.text_input("Seu E-mail")
-                nova_senha = st.text_input("Crie uma Senha", type="password")
-                if st.form_submit_button(
-                    "Cadastrar Usuário", use_container_width=True
-                ):
-                    if not novo_nome or not novo_email or not nova_senha:
-                        st.warning("Preencha todos os campos.")
-                    else:
-                        try:
-                            supabase.table("usuarios").insert({
-                                "nome": novo_nome.strip(),
-                                "email": novo_email.strip().lower(),
-                                "senha_hash": hash_senha(nova_senha),
-                            }).execute()
-                            st.success(
-                                "Conta criada! Vá para a aba 'Entrar'."
-                            )
-                        except Exception:
-                            st.error(
-                                "Este e-mail já está cadastrado ou houve erro de conexão."
-                            )
+                    except Exception:
+                        st.error("E-mail ou senha incorretos.")
 
 
 def dashboard_principal():
@@ -143,16 +120,19 @@ def dashboard_principal():
             st.session_state.logado = False
             st.rerun()
 
-    demandas_data = (
-        supabase.table("demandas").select("*").order("prazo").execute().data
-    )
-    fin_data = (
-        supabase.table("financeiro")
-        .select("*")
-        .order("data_registro")
-        .execute()
-        .data
-    )
+    try:
+        demandas_data = (
+            supabase.table("demandas").select("*").order("prazo").execute().data
+        )
+        fin_data = (
+            supabase.table("financeiro")
+            .select("*")
+            .order("data_registro")
+            .execute()
+            .data
+        )
+    except Exception:
+        demandas_data, fin_data = [], []
 
     df_demandas = pd.DataFrame(demandas_data) if demandas_data else pd.DataFrame()
     df_fin = pd.DataFrame(fin_data) if fin_data else pd.DataFrame()
@@ -161,24 +141,24 @@ def dashboard_principal():
         st.title("Painel de Controle — Sustenta UFU")
         pendentes = (
             len(df_demandas[df_demandas["categoria"] == "Pendente"])
-            if not df_demandas.empty
+            if not df_demandas.empty and "categoria" in df_demandas.columns
             else 0
         )
         concluidas = (
             len(df_demandas[df_demandas["categoria"] == "Concluída"])
-            if not df_demandas.empty
+            if not df_demandas.empty and "categoria" in df_demandas.columns
             else 0
         )
         parcerias = (
             len(df_demandas[df_demandas["categoria"] == "Ideia/Parceria"])
-            if not df_demandas.empty
+            if not df_demandas.empty and "categoria" in df_demandas.columns
             else 0
         )
 
-        total_caixa = df_fin["valor"].sum() if not df_fin.empty else 0.0
-        media_valores = df_fin["valor"].mean() if not df_fin.empty else 0.0
+        total_caixa = df_fin["valor"].sum() if not df_fin.empty and "valor" in df_fin.columns else 0.0
+        media_valores = df_fin["valor"].mean() if not df_fin.empty and "valor" in df_fin.columns else 0.0
         meta_atual = (
-            df_fin["meta_mensal"].iloc[-1] if not df_fin.empty else 5000.0
+            df_fin["meta_mensal"].iloc[-1] if not df_fin.empty and "meta_mensal" in df_fin.columns else 5000.0
         )
 
         c1, c2, c3, c4 = st.columns(4)
@@ -195,7 +175,7 @@ def dashboard_principal():
         col_g1, col_g2 = st.columns([1.6, 1])
 
         with col_g1:
-            if not df_fin.empty:
+            if not df_fin.empty and "descricao" in df_fin.columns and "valor" in df_fin.columns:
                 fig_bar = px.bar(
                     df_fin,
                     x="descricao",
@@ -216,9 +196,7 @@ def dashboard_principal():
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
             else:
-                st.info(
-                    "Adicione valores em 'Gestão Financeira' para ver o gráfico."
-                )
+                st.info("Adicione valores em 'Gestão Financeira' para ver o gráfico.")
 
         with col_g2:
             percentual = (
@@ -247,13 +225,6 @@ def dashboard_principal():
             )
             st.plotly_chart(fig_gauge, use_container_width=True)
 
-            if total_caixa >= meta_atual and not df_fin.empty:
-                st.success("🎉 Meta financeira alcançada!")
-            else:
-                st.warning(
-                    f"Faltam **R$ {max(meta_atual - total_caixa, 0):,.2f}** para a meta."
-                )
-
     elif menu in [
         "⏳ Demandas Pendentes",
         "✅ Demandas Concluídas",
@@ -281,16 +252,19 @@ def dashboard_principal():
                 if not titulo.strip() or not responsavel.strip():
                     st.error("Preencha Título, Nome do Usuário e Prazo.")
                 else:
-                    supabase.table("demandas").insert({
-                        "categoria": cat,
-                        "titulo": titulo.strip(),
-                        "descricao": descricao.strip(),
-                        "responsavel": responsavel.strip(),
-                        "prazo": str(prazo),
-                    }).execute()
-                    st.rerun()
+                    try:
+                        supabase.table("demandas").insert({
+                            "categoria": cat,
+                            "titulo": titulo.strip(),
+                            "descricao": descricao.strip(),
+                            "responsavel": responsavel.strip(),
+                            "prazo": str(prazo),
+                        }).execute()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar: {e}")
 
-        if not df_demandas.empty:
+        if not df_demandas.empty and "categoria" in df_demandas.columns:
             itens = df_demandas[df_demandas["categoria"] == cat]
             for _, row in itens.iterrows():
                 c_card, c_btn = st.columns([4, 1.2])
@@ -298,10 +272,10 @@ def dashboard_principal():
                     st.markdown(
                         f"""
                     <div class="card-item">
-                        <span class="badge">{row['categoria']}</span>
-                        <h4 style="margin: 8px 0 4px 0;">{row['titulo']}</h4>
-                        <p style="margin: 0 0 8px 0; color: #A7F3D0;">{row['descricao'] or ''}</p>
-                        <small style="color: #6EE7B7;">👤 <b>{row['responsavel']}</b> | 📅 Prazo: <b>{row['prazo']}</b></small>
+                        <span class="badge">{row.get('categoria', '')}</span>
+                        <h4 style="margin: 8px 0 4px 0;">{row.get('titulo', '')}</h4>
+                        <p style="margin: 0 0 8px 0; color: #A7F3D0;">{row.get('descricao', '') or ''}</p>
+                        <small style="color: #6EE7B7;">👤 <b>{row.get('responsavel', '')}</b> | 📅 Prazo: <b>{row.get('prazo', '')}</b></small>
                     </div>""",
                         unsafe_allow_html=True,
                     )
@@ -332,12 +306,15 @@ def dashboard_principal():
                 if not desc.strip() or val <= 0:
                     st.error("Preencha a descrição e um valor maior que zero.")
                 else:
-                    supabase.table("financeiro").insert({
-                        "descricao": desc.strip(),
-                        "valor": val,
-                        "meta_mensal": meta,
-                    }).execute()
-                    st.rerun()
+                    try:
+                        supabase.table("financeiro").insert({
+                            "descricao": desc.strip(),
+                            "valor": val,
+                            "meta_mensal": meta,
+                        }).execute()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao registrar: {e}")
 
         if not df_fin.empty:
             st.dataframe(
