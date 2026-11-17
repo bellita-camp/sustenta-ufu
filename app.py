@@ -75,13 +75,11 @@ def tela_autenticacao():
             senha = st.text_input("Senha", type="password")
             
             if st.form_submit_button("Acessar Dashboard", use_container_width=True):
-                # Usuário padrão fixo de acesso imediato
                 if email.strip().lower() == "isabella.felipe@ufu.br" and senha == "Sustenta2026!":
                     st.session_state.logado = True
                     st.session_state.usuario_nome = "Isabella Felipe"
                     st.rerun()
                 else:
-                    # Tenta validar no Supabase caso seja outro usuário cadastrado
                     try:
                         res = (
                             supabase.table("usuarios")
@@ -317,11 +315,29 @@ def dashboard_principal():
                         st.error(f"Erro ao registrar: {e}")
 
         if not df_fin.empty:
-            st.dataframe(
-                df_fin[["data_registro", "descricao", "valor", "meta_mensal"]],
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.markdown("### 📋 Histórico de Lançamentos")
+            for _, row in df_fin.iterrows():
+                c_card, c_btn = st.columns([4, 1.2])
+                with c_card:
+                    st.markdown(
+                        f"""
+                    <div class="card-item">
+                        <span class="badge">📅 {row.get('data_registro', '')}</span>
+                        <h4 style="margin: 8px 0 4px 0;">{row.get('descricao', '')}</h4>
+                        <p style="margin: 0; color: #A7F3D0;">
+                            💵 Valor: <b>R$ {float(row.get('valor', 0)):,.2f}</b> | 
+                            🎯 Meta do Período: <b>R$ {float(row.get('meta_mensal', 0)):,.2f}</b>
+                        </p>
+                    </div>""",
+                        unsafe_allow_html=True,
+                    )
+                with c_btn:
+                    st.write("")
+                    if st.button("🗑️ Excluir", key=f"del_fin_{row['id']}"):
+                        supabase.table("financeiro").delete().eq(
+                            "id", row["id"]
+                        ).execute()
+                        st.rerun()
 
 
 if st.session_state.logado:
